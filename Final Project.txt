@@ -1,0 +1,177 @@
+---
+title: "Final Project"
+output: pdf_document
+---
+nba <- read.csv(file="nba.csv",header=T)
+#summary(nba)
+#look at 3PP, FGP, REB, PTS, AST, TOV, STL, BLK / WINP
+nba = subset(nba, GP >= 82)
+nba = subset(nba, select = -c(W,L,MIN,FGM,FGA,X3PM,X3PA,FTM,FTA,OREB,DREB,BLKA,PF,PFD,X...,SEASON,TEAM,teamstatspk))
+#summary(nba)
+nba = subset(nba, select = -c(GP))
+names(nba)[1] <- "WINP"
+names(nba)[3] <- "FGP"
+names(nba)[4] <- "TPP"
+names(nba)[5] <- "FTP"
+summary(nba)
+write.csv(nba, file="NBA_Clean.csv")
+
+# For Exploratory Data Analysis
+# From http://www.sthda.com/english/wiki/correlation-matrix-a-quick-start-guide-to-analyze-format-and-visualize-a-correlation-matrix-using-r-software 
+install.packages("PerformanceAnalytics")
+library("PerformanceAnalytics")
+chart.Correlation(train, histogram=TRUE, pch=19)
+
+pairs(nba[,-c(5,6,7,8,9,10)])
+pairs(nba[,-c(2,3,4,8,9,10)])
+pairs(nba[,-c(2,3,4,5,6,7)])
+
+s <- sample(1:534, 534*0.75, replace=F)
+train <- nba[s, ]
+test <- nba[-s, ]
+summary(train)
+summary(test)
+sdtr <- apply(train, 2, sd)
+sdte <- apply(test, 2, sd)
+sdtr
+sdte
+
+firstmodel <- lm(WINP ~ PTS + TPP + FGP + REB + FTP + AST + TOV + STL + BLK, data = train)
+summary(firstmodel)
+secondmodel <- lm(WINP ~ PTS + TPP + FGP + REB + FTP + AST + TOV, data = train)
+summary(secondmodel)
+thirdmodel <- lm(WINP ~ PTS + TPP + FGP + REB + AST + TOV, data = train)
+summary(thirdmodel)
+
+pairs(train[,-c(5,6,7,8,9,10)])
+pairs(train[,-c(2,3,4,8,9,10)])
+pairs(train[,-c(2,3,4,5,6,7)])
+
+hist(train$PTS)
+hist(train$FGP)
+hist(train$TPP)
+hist(train$FTP)
+hist(train$REB)
+hist(train$STL)
+hist(train$TOV)
+hist(train$AST)
+hist(train$BLK)
+
+r1 <- firstmodel$residuals
+fit1 <- firstmodel$fitted.values
+par(mfrow=c(3,2))
+plot(r1 ~ fit1, main="Residuals vs Fitted Values", xlab="Fitted Values", ylab="Residuals")
+
+plot(r1 ~ train$PTS)
+plot(r1 ~ train$FGP)
+plot(r1 ~ train$TPP)
+plot(r1 ~ train$FTP)
+plot(r1 ~ train$REB)
+plot(r1 ~ train$AST)
+plot(r1 ~ train$TOV)
+plot(r1 ~ train$STL)
+plot(r1 ~ train$BLK)
+
+qqnorm(r1)
+qqline(r1)
+
+summary(firstmodel)$r.squared
+summary(firstmodel)
+anova(firstmodel)
+
+#Reduce
+reducedmodel <- lm(WINP ~ PTS + TPP + FGP + REB + FTP + TOV + STL + BLK, data = train)
+summary(reducedmodel)
+anova(reducedmodel,firstmodel)
+
+par(mfrow=c(4,3))
+for(i in 2:10){
+  boxplot(nba[,i], main=paste0("Boxplot of ", names(nba)[i]), xlab=names(nba)[i]
+          , horizontal=T)
+}
+
+select = function(model, n)
+{
+  SSres <- sum(model$residuals^2)
+  Rsq <- summary(model)$r.squared
+  Rsq_adj <- summary(model)$adj.r.squared
+  p <- length(model$coefficients) - 1
+  AIC <- n*log(SSres/n) + 2*p    
+  AICc <- AIC + (2*(p+2)*(p+3)/(n-p-1))
+  BIC <- n*log(SSres/n) + (p+2)*log(n)    
+  res <- c(SSres, Rsq, Rsq_adj, AIC, AICc, BIC)
+  names(res) <- c("SSres", "Rsq", "Rsq_adj", "AIC", "AIC_c", "BIC")
+  return(res)
+}
+
+# apply to the models
+s1 <- select(firstmodel, nrow(train))
+s1
+s2 <- select(reducedmodel, nrow(train))
+s2
+
+# cutoffs
+n <- nrow(train)
+p <- length(coef(reducedmodel))-1
+
+Hcut <- 2*((p+1)/n)
+DFFITScut <- 2*sqrt((p+1)/n)
+DFBETAcut <- 2/sqrt(n)
+Dcut <- qf(0.5, p+1, n-p-1)
+
+# identify the leverage points
+h <- hatvalues(reducedmodel)
+which(h>Hcut)
+
+# identify the outliers
+r <- rstandard(reducedmodel)
+which(r < -2 | r > 2)
+which(r < -4 | r > 4)
+
+# identify influential points by Cook's distance
+D <- cooks.distance(reducedmodel)
+which(D > Dcut)
+
+# identify influential points by DFFITS
+fits <- dffits(reducedmodel)
+which(abs(fits) > DFFITScut)
+
+# identify influential points by DFBETAS
+betas <- dfbetas(reducedmodel)
+dim(betas)
+
+for(i in 1:9){
+  print(paste0("Beta ", i-1))
+  print(which(abs(betas[,i]) > DFBETAcut))
+}
+
+
+# who is this common observation??
+nba[250,]
+
+plot(train$WINP~fitted(reducedmodel))
+
+install.packages("car")
+library(car)
+
+library(car)
+vif(reducedmodel)
+vif
+
+testmodel <- lm(WINP ~ PTS + TPP + FGP + REB + FTP + TOV + STL + BLK, data = test)
+summary(testmodel)
+
+# Plots of Testing Dataset
+pairs(test)
+plot(test$WINP ~ fitted(testmodel), main="Y vs Fitted", xlab="Fitted", ylab="Shots Taken")
+lines(lowess(test$WINP ~ fitted(testmodel)), lty=2)
+abline(a = 0, b = 1)
+
+par(mfrow=c(2,3))
+plot(rstandard(testmodel)~fitted(testmodel), xlab="fitted", ylab="Residuals")
+for(i in 2:9){
+  plot(rstandard(testmodel)~test[,i], xlab=names(test)[i], ylab="Residuals")
+}
+qqnorm(rstandard(testmodel))
+qqline(rstandard(testmodel))
+vif(testmodel)
